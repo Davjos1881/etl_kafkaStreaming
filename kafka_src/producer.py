@@ -40,4 +40,4 @@ def run_producer(unified_csv):
 
     producer.flush()
     producer.close()
-    print("Producer finalizado ✓")
+    print("Producer finalizado")
