@@ -43,41 +43,42 @@ def predict(event, model, scaler):
 
 
 def process_event(event, model, scaler, conn):
-    # Validar schema
+    from sqlalchemy import text
+
+    #Guardar raw antes de validacion
+    raw_id = insert_raw_event(conn, event, status='VALID')
+
+    #Validar schema
     ok, status = validate_schema(event)
     if not ok:
-        raw_id = insert_raw_event(conn, event, status=status)
+        conn.execute(text("UPDATE raw_happiness_events SET status = :s WHERE id = :id"),
+                     {"s": status, "id": raw_id})
         insert_dim_raw_event(conn, raw_id, status)
         print(f"{event.get('country', '?')} -> {status}")
         return
 
-    # Validar valores
+    #Validar valores
     ok, status = validate_values(event)
     if not ok:
-        raw_id = insert_raw_event(conn, event, status=status)
+        conn.execute(text("UPDATE raw_happiness_events SET status = :s WHERE id = :id"),
+                     {"s": status, "id": raw_id})
         insert_dim_raw_event(conn, raw_id, status)
         print(f"{event.get('country', '?')} -> {status}")
         return
 
-    # Insertar raw
-    raw_id = insert_raw_event(conn, event, status='VALID')
+    #Dimensiones
     insert_dim_raw_event(conn, raw_id, 'VALID')
-
-    # Dimensiones
     country_id = get_or_create_country(conn, event['country'], event['region'])
     date_id    = get_or_create_date(conn, event['year'])
 
-    # Predecir
+    #Predecir
     try:
         predicted = predict(event, model, scaler)
         insert_prediction(conn, raw_id, country_id, date_id, predicted, event['actual_score'])
-        print(f"{event['country']} ({event['year']}) → predicted: {predicted:.4f} | actual: {event['actual_score']:.4f}")
+        print(f"{event['country']} ({event['year']}) -> predicted: {predicted:.4f} | actual: {event['actual_score']:.4f}")
     except Exception as e:
-        from sqlalchemy import text
-        conn.execute(
-            text("UPDATE raw_happiness_events SET status = :s WHERE id = :id"),
-            {"s": "PREDICTION_ERROR", "id": raw_id}
-        )
+        conn.execute(text("UPDATE raw_happiness_events SET status = :s WHERE id = :id"),
+                     {"s": "PREDICTION_ERROR", "id": raw_id})
         print(f"{event['country']} -> PREDICTION_ERROR: {e}")
 
 
